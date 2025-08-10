@@ -173,3 +173,65 @@
   color: var(--text-error);
   font-weight: 500;
 }
+
+/* Auto-sync UI Styles */
+.hivemind-team-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.hivemind-team-name {
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.hivemind-team-status {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.hivemind-team-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.hivemind-team-actions button {
+  margin: 0;
+  font-size: 0.85em;
+  padding: 0.25rem 0.5rem;
+}
+
+/* Team Join Modal Styles */
+.hivemind-info-box {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.hivemind-info-title {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text-normal);
+}
+
+.hivemind-info-box ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.hivemind-info-box li {
+  margin-bottom: 0.25rem;
+  color: var(--text-normal);
+}
+
+.hivemind-info-note {
+  margin-top: 0.75rem;
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: 0.9em;
+}

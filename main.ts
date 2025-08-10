@@ -16,7 +16,9 @@ import { FileRecoveryService } from './src/services/FileRecoveryService';
 import { SyncOrchestrator } from './src/services/SyncOrchestrator';
 import { SharedNoteManager } from './src/services/SharedNoteManager';
 import { TeamManager } from './src/services/TeamManager';
+import { TeamAutoSyncService } from './src/services/TeamAutoSyncService';
 import { SyncStatusBar } from './src/ui/SyncStatusBar';
+import { TeamJoinModal } from './src/ui/TeamJoinModal';
 
 export default class HivemindPlugin extends Plugin {
   settings: HivemindSettings;
@@ -26,6 +28,7 @@ export default class HivemindPlugin extends Plugin {
   syncOrchestrator: SyncOrchestrator;
   sharedNoteManager: SharedNoteManager;
   teamManager: TeamManager;
+  autoSyncService: TeamAutoSyncService;
   statusBar: SyncStatusBar;
 
   async onload() {
@@ -56,6 +59,11 @@ export default class HivemindPlugin extends Plugin {
       this.settings
     );
     this.teamManager = new TeamManager(this, this.mappingManager);
+    this.autoSyncService = new TeamAutoSyncService(
+      this,
+      this.mappingManager,
+      this.teamManager
+    );
     this.statusBar = new SyncStatusBar(this);
     this.syncOrchestrator.setStatusBar(this.statusBar);
 
@@ -66,7 +74,9 @@ export default class HivemindPlugin extends Plugin {
       this.statusBar.setConnected(false);
       // Only show notice on first run, not every startup
       if (!this.settings.syncServerUrl && !this.settings.userId) {
-        new Notice('Hivemind: Open settings to configure your sync server and user ID');
+        new Notice(
+          'Hivemind: Open settings to configure your sync server and user ID'
+        );
       }
     }
 
@@ -74,6 +84,9 @@ export default class HivemindPlugin extends Plugin {
 
     // Restore sync listeners for all shared notes
     await this.sharedNoteManager.restoreAllSyncListeners();
+
+    // Start auto-sync for enabled teams
+    await this.autoSyncService.startAutoSync();
 
     // Register event listeners for file operations
     this.registerEvent(
@@ -152,8 +165,11 @@ export default class HivemindPlugin extends Plugin {
       id: 'join-team',
       name: 'Join a team',
       callback: () => {
-        new JoinTeamModal(this.app, async (teamId) => {
-          await this.teamManager.joinTeam(teamId);
+        new JoinTeamModal(this.app, async teamId => {
+          // Show auto-sync option modal
+          new TeamJoinModal(this.app, teamId, async enableAutoSync => {
+            await this.teamManager.joinTeam(teamId, enableAutoSync);
+          }).open();
         }).open();
       },
     });
@@ -162,7 +178,7 @@ export default class HivemindPlugin extends Plugin {
       id: 'join-from-share-link',
       name: 'Join document from share link',
       callback: () => {
-        new ShareLinkModal(this.app, async (link) => {
+        new ShareLinkModal(this.app, async link => {
           await this.teamManager.joinFromShareLink(link);
         }).open();
       },
@@ -177,7 +193,7 @@ export default class HivemindPlugin extends Plugin {
           new Notice('You are not a member of any teams');
           return;
         }
-        
+
         // For simplicity, if only one team, leave it directly
         if (teams.length === 1) {
           await this.teamManager.leaveTeam(teams[0], false);
@@ -281,6 +297,7 @@ export default class HivemindPlugin extends Plugin {
     this.statusBar?.destroy();
     this.sharedNoteManager?.cleanup();
     this.syncOrchestrator?.cleanup();
+    this.autoSyncService?.stopAllAutoSync();
     this.keepsyncService?.shutdown();
   }
 
@@ -317,23 +334,27 @@ class CreateTeamModal extends Modal {
       .addText(text => text.setPlaceholder('My Team'));
 
     new Setting(contentEl)
-      .addButton(btn => btn
-        .setButtonText('Cancel')
-        .onClick(() => this.close()))
-      .addButton(btn => btn
-        .setButtonText('Create')
-        .setCta()
-        .onClick(() => {
-          const teamId = (teamIdSetting.components[0] as TextComponent).getValue();
-          const teamName = (teamNameSetting.components[0] as TextComponent).getValue();
-          
-          if (teamId) {
-            this.onSubmit(teamId, teamName || teamId);
-            this.close();
-          } else {
-            new Notice('Please enter a team ID');
-          }
-        }));
+      .addButton(btn => btn.setButtonText('Cancel').onClick(() => this.close()))
+      .addButton(btn =>
+        btn
+          .setButtonText('Create')
+          .setCta()
+          .onClick(() => {
+            const teamId = (
+              teamIdSetting.components[0] as TextComponent
+            ).getValue();
+            const teamName = (
+              teamNameSetting.components[0] as TextComponent
+            ).getValue();
+
+            if (teamId) {
+              this.onSubmit(teamId, teamName || teamId);
+              this.close();
+            } else {
+              new Notice('Please enter a team ID');
+            }
+          })
+      );
   }
 
   onClose() {
@@ -361,22 +382,24 @@ class JoinTeamModal extends Modal {
       .addText(text => text.setPlaceholder('team-id'));
 
     new Setting(contentEl)
-      .addButton(btn => btn
-        .setButtonText('Cancel')
-        .onClick(() => this.close()))
-      .addButton(btn => btn
-        .setButtonText('Join')
-        .setCta()
-        .onClick(() => {
-          const teamId = (teamIdSetting.components[0] as TextComponent).getValue();
-          
-          if (teamId) {
-            this.onSubmit(teamId);
-            this.close();
-          } else {
-            new Notice('Please enter a team ID');
-          }
-        }));
+      .addButton(btn => btn.setButtonText('Cancel').onClick(() => this.close()))
+      .addButton(btn =>
+        btn
+          .setButtonText('Join')
+          .setCta()
+          .onClick(() => {
+            const teamId = (
+              teamIdSetting.components[0] as TextComponent
+            ).getValue();
+
+            if (teamId) {
+              this.onSubmit(teamId);
+              this.close();
+            } else {
+              new Notice('Please enter a team ID');
+            }
+          })
+      );
   }
 
   onClose() {
@@ -404,22 +427,24 @@ class ShareLinkModal extends Modal {
       .addText(text => text.setPlaceholder('hivemind://team-id/document-id'));
 
     new Setting(contentEl)
-      .addButton(btn => btn
-        .setButtonText('Cancel')
-        .onClick(() => this.close()))
-      .addButton(btn => btn
-        .setButtonText('Join')
-        .setCta()
-        .onClick(() => {
-          const link = (linkSetting.components[0] as TextComponent).getValue();
-          
-          if (link) {
-            this.onSubmit(link);
-            this.close();
-          } else {
-            new Notice('Please enter a share link');
-          }
-        }));
+      .addButton(btn => btn.setButtonText('Cancel').onClick(() => this.close()))
+      .addButton(btn =>
+        btn
+          .setButtonText('Join')
+          .setCta()
+          .onClick(() => {
+            const link = (
+              linkSetting.components[0] as TextComponent
+            ).getValue();
+
+            if (link) {
+              this.onSubmit(link);
+              this.close();
+            } else {
+              new Notice('Please enter a share link');
+            }
+          })
+      );
   }
 
   onClose() {
@@ -566,9 +591,48 @@ class HivemindSettingTab extends PluginSettingTab {
         const teamItem = teamsList.createEl('div', {
           cls: 'hivemind-team-item',
         });
-        teamItem.createEl('span', { text: teamId });
 
-        const leaveBtn = teamItem.createEl('button', {
+        const teamInfo = teamItem.createEl('div', {
+          cls: 'hivemind-team-info',
+        });
+        teamInfo.createEl('span', { text: teamId, cls: 'hivemind-team-name' });
+
+        const autoSyncEnabled =
+          this.plugin.teamManager.isTeamAutoSyncEnabled(teamId);
+        const statusText = autoSyncEnabled ? 'Auto-sync: ON' : 'Auto-sync: OFF';
+        teamInfo.createEl('small', {
+          text: statusText,
+          cls: 'hivemind-team-status',
+        });
+
+        const teamActions = teamItem.createEl('div', {
+          cls: 'hivemind-team-actions',
+        });
+
+        // Auto-sync toggle
+        const autoSyncBtn = teamActions.createEl('button', {
+          text: autoSyncEnabled ? 'Disable Auto-sync' : 'Enable Auto-sync',
+          cls: autoSyncEnabled ? 'mod-warning' : 'mod-cta',
+        });
+        autoSyncBtn.onclick = async () => {
+          if (autoSyncEnabled) {
+            await this.plugin.teamManager.disableTeamAutoSync(teamId);
+          } else {
+            await this.plugin.teamManager.enableTeamAutoSync(teamId);
+          }
+          this.display();
+        };
+
+        // Sync all button
+        const syncAllBtn = teamActions.createEl('button', {
+          text: 'Sync All',
+        });
+        syncAllBtn.onclick = async () => {
+          await this.plugin.teamManager.syncAllTeamDocuments(teamId);
+        };
+
+        // Leave team button
+        const leaveBtn = teamActions.createEl('button', {
           text: 'Leave',
           cls: 'mod-warning',
         });
@@ -590,11 +654,42 @@ class HivemindSettingTab extends PluginSettingTab {
           ) as HTMLInputElement;
           const teamId = input?.value?.trim();
           if (teamId) {
-            await this.plugin.teamManager.joinTeam(teamId);
-            input.value = '';
-            this.display();
+            // Show auto-sync option modal
+            new TeamJoinModal(this.app, teamId, async enableAutoSync => {
+              await this.plugin.teamManager.joinTeam(teamId, enableAutoSync);
+              input.value = '';
+              this.display();
+            }).open();
           }
         })
+      );
+
+    // Auto-sync settings
+    containerEl.createEl('h3', { text: 'Auto-Sync Settings' });
+
+    new Setting(containerEl)
+      .setName('Team sync folder')
+      .setDesc('Default folder where auto-synced team documents are saved')
+      .addText(text =>
+        text
+          .setPlaceholder('Shared')
+          .setValue(this.plugin.settings.teamSyncFolder)
+          .onChange(async value => {
+            this.plugin.settings.teamSyncFolder = value || 'Shared';
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Organize by team')
+      .setDesc('Create subfolders for each team (e.g., Shared/team-name/)')
+      .addToggle(toggle =>
+        toggle
+          .setValue(this.plugin.settings.organizeSyncByTeam)
+          .onChange(async value => {
+            this.plugin.settings.organizeSyncByTeam = value;
+            await this.plugin.saveSettings();
+          })
       );
   }
 
@@ -602,10 +697,11 @@ class HivemindSettingTab extends PluginSettingTab {
     if (!this.statusEl) return;
 
     this.statusEl.empty();
-    
+
     const isConnected = this.plugin.keepsyncService?.isInitialized();
-    const hasSettings = this.plugin.settings.userId && this.plugin.settings.syncServerUrl;
-    
+    const hasSettings =
+      this.plugin.settings.userId && this.plugin.settings.syncServerUrl;
+
     if (isConnected) {
       this.statusEl.createEl('div', {
         text: '🟢 Connected to sync server',
@@ -645,7 +741,9 @@ class HivemindSettingTab extends PluginSettingTab {
     await this.plugin.saveSettings();
 
     // Show loading state
-    const button = this.containerEl.querySelector('.mod-cta') as HTMLButtonElement;
+    const button = this.containerEl.querySelector(
+      '.mod-cta'
+    ) as HTMLButtonElement;
     if (button) {
       button.textContent = 'Connecting...';
       button.disabled = true;

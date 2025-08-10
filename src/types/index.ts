@@ -13,6 +13,9 @@ export interface HivemindSettings {
   syncServerUrl: string;
   documentMappings: Record<string, LocalDocumentMapping>;
   teams: string[];
+  teamAutoSync: Record<string, boolean>;
+  teamSyncFolder: string;
+  organizeSyncByTeam: boolean;
 }
 
 export interface SharedDocumentMetadata {
@@ -28,4 +31,7 @@ export const DEFAULT_SETTINGS: HivemindSettings = {
   syncServerUrl: 'ws://localhost:7777',
   documentMappings: {},
   teams: [],
+  teamAutoSync: {},
+  teamSyncFolder: 'Shared',
+  organizeSyncByTeam: true,
 };

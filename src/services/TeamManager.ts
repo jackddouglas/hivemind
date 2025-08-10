@@ -20,8 +20,20 @@ export class TeamManager {
   /**
    * Join a team and discover available shared documents
    */
-  async joinTeam(teamId: string): Promise<void> {
+  async joinTeam(teamId: string, enableAutoSync?: boolean): Promise<void> {
     try {
+      // Add team to user's team list first
+      if (!this.plugin.settings.teams.includes(teamId)) {
+        this.plugin.settings.teams.push(teamId);
+        await this.plugin.saveSettings();
+      }
+
+      // Set auto-sync preference if specified
+      if (enableAutoSync !== undefined) {
+        this.plugin.settings.teamAutoSync[teamId] = enableAutoSync;
+        await this.plugin.saveSettings();
+      }
+
       // Get list of shared documents in team
       const teamIndexPath = `/teams/${teamId}/index`;
       const teamIndexDoc = await readDoc<{ teamIndex: string[] }>(
@@ -30,34 +42,38 @@ export class TeamManager {
       const teamIndex = teamIndexDoc?.teamIndex || [];
 
       if (!teamIndex || teamIndex.length === 0) {
-        new Notice(`No shared documents found in team: ${teamId}`);
+        new Notice(`Joined team: ${teamId} (no documents yet)`);
         return;
       }
 
-      // Fetch metadata for all documents
-      const documentsWithMetadata = await this.fetchDocumentsMetadata(
-        teamId,
-        teamIndex
-      );
+      // Check if auto-sync is enabled for this team
+      const autoSyncEnabled = this.plugin.settings.teamAutoSync[teamId];
 
-      // Show user available documents to sync
-      new TeamDocumentsModal(
-        this.app,
-        teamId,
-        documentsWithMetadata,
-        async selectedDocs => {
-          for (const docId of selectedDocs) {
-            await this.joinDocument(docId, teamId);
+      if (autoSyncEnabled) {
+        // Auto-sync all documents
+        await this.plugin.autoSyncService.syncAllTeamDocuments(teamId);
+        await this.plugin.autoSyncService.startTeamAutoSync(teamId);
+      } else {
+        // Show manual selection modal
+        const documentsWithMetadata = await this.fetchDocumentsMetadata(
+          teamId,
+          teamIndex
+        );
+
+        new TeamDocumentsModal(
+          this.app,
+          teamId,
+          documentsWithMetadata,
+          async selectedDocs => {
+            for (const docId of selectedDocs) {
+              await this.joinDocument(docId, teamId);
+            }
+            new Notice(`Joined ${selectedDocs.length} shared document(s)`);
           }
-          new Notice(`Joined ${selectedDocs.length} shared document(s)`);
-        }
-      ).open();
-
-      // Add team to user's team list
-      if (!this.plugin.settings.teams.includes(teamId)) {
-        this.plugin.settings.teams.push(teamId);
-        await this.plugin.saveSettings();
+        ).open();
       }
+
+      new Notice(`Joined team: ${teamId}`);
     } catch (error) {
       console.error('Error joining team:', error);
       new Notice(`Failed to join team: ${error.message}`);
@@ -330,5 +346,33 @@ export class TeamManager {
 
     // Then join the specific document
     await this.joinDocument(documentId, teamId);
+  }
+
+  /**
+   * Enable auto-sync for a team
+   */
+  async enableTeamAutoSync(teamId: string): Promise<void> {
+    await this.plugin.autoSyncService.enableTeamAutoSync(teamId);
+  }
+
+  /**
+   * Disable auto-sync for a team
+   */
+  async disableTeamAutoSync(teamId: string): Promise<void> {
+    await this.plugin.autoSyncService.disableTeamAutoSync(teamId);
+  }
+
+  /**
+   * Check if auto-sync is enabled for a team
+   */
+  isTeamAutoSyncEnabled(teamId: string): boolean {
+    return this.plugin.autoSyncService.isTeamAutoSyncEnabled(teamId);
+  }
+
+  /**
+   * Sync all documents in a team manually
+   */
+  async syncAllTeamDocuments(teamId: string): Promise<void> {
+    await this.plugin.autoSyncService.syncAllTeamDocuments(teamId);
   }
 }
