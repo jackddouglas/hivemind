@@ -13,6 +13,7 @@ import { DocumentMappingManager } from './src/services/DocumentMappingManager';
 import { FileRecoveryService } from './src/services/FileRecoveryService';
 import { SyncOrchestrator } from './src/services/SyncOrchestrator';
 import { SharedNoteManager } from './src/services/SharedNoteManager';
+import { SyncStatusBar } from './src/ui/SyncStatusBar';
 
 export default class HivemindPlugin extends Plugin {
   settings: HivemindSettings;
@@ -21,6 +22,7 @@ export default class HivemindPlugin extends Plugin {
   fileRecoveryService: FileRecoveryService;
   syncOrchestrator: SyncOrchestrator;
   sharedNoteManager: SharedNoteManager;
+  statusBar: SyncStatusBar;
 
   async onload() {
     await this.loadSettings();
@@ -42,18 +44,23 @@ export default class HivemindPlugin extends Plugin {
       this.syncOrchestrator,
       this.settings
     );
+    this.statusBar = new SyncStatusBar(this);
+    this.syncOrchestrator.setStatusBar(this.statusBar);
 
     try {
       if (this.settings.syncServerUrl && this.settings.userId) {
         await this.keepsyncService.initialize(this.settings.syncServerUrl);
+        this.statusBar.setConnected(true);
         new Notice('Hivemind: Connected to sync server');
       } else {
+        this.statusBar.setConnected(false);
         new Notice(
           'Hivemind: Please configure server URL and user ID in settings'
         );
       }
     } catch (error) {
       console.error('Failed to initialize Keepsync:', error);
+      this.statusBar.setConnected(false);
       new Notice(
         'Hivemind: Failed to connect to sync server. Check console for details.'
       );
@@ -133,14 +140,17 @@ export default class HivemindPlugin extends Plugin {
           await this.keepsyncService.shutdown();
           if (this.settings.syncServerUrl && this.settings.userId) {
             await this.keepsyncService.initialize(this.settings.syncServerUrl);
+            this.statusBar.setConnected(true);
             new Notice('Hivemind: Reconnected to sync server');
           } else {
+            this.statusBar.setConnected(false);
             new Notice(
               'Hivemind: Please configure server URL and user ID in settings'
             );
           }
         } catch (error) {
           console.error('Failed to reconnect to Keepsync:', error);
+          this.statusBar.setConnected(false);
           new Notice('Hivemind: Failed to reconnect to sync server');
         }
       },
@@ -181,6 +191,7 @@ export default class HivemindPlugin extends Plugin {
   }
 
   onunload() {
+    this.statusBar?.destroy();
     this.sharedNoteManager?.cleanup();
     this.syncOrchestrator?.cleanup();
     this.keepsyncService?.shutdown();
@@ -211,7 +222,7 @@ class HivemindSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('User ID')
-      .setDesc('Your unique identifier')
+      .setDesc('Your unique identifier for team collaboration')
       .addText(text =>
         text
           .setPlaceholder('your-username')
@@ -235,72 +246,116 @@ class HivemindSettingTab extends PluginSettingTab {
           })
       );
 
-    new Setting(containerEl)
-      .setName('Add Team')
-      .setDesc('Enter a team ID to share notes with')
-      .addText(text => {
-        text.setPlaceholder('team-id');
-        return text;
-      })
-      .addButton(button => {
-        button
-          .setButtonText('Add Team')
-          .setCta()
-          .onClick(async () => {
-            const input = containerEl.querySelector(
-              'input[placeholder="team-id"]'
-            ) as HTMLInputElement;
-            const value = input?.value?.trim();
-
-            if (!value) {
-              new Notice('Please enter a team ID');
-              return;
-            }
-
-            if (this.plugin.settings.teams.includes(value)) {
-              new Notice('Team already exists');
-              return;
-            }
-
-            this.plugin.settings.teams.push(value);
-            await this.plugin.saveSettings();
-            input.value = '';
-            this.display();
-            new Notice(`Added team: ${value}`);
-          });
-      });
-
-    containerEl.createEl('h3', { text: 'Teams' });
-    const teamsList = containerEl.createEl('div', {
-      cls: 'hivemind-teams-list',
-    });
-
-    for (const teamId of this.plugin.settings.teams) {
-      const item = teamsList.createEl('div', { cls: 'hivemind-team-item' });
-      item.createEl('span', { text: teamId });
-      item.createEl('button', { text: 'Remove' }).onclick = async () => {
-        this.plugin.settings.teams = this.plugin.settings.teams.filter(
-          t => t !== teamId
-        );
-        await this.plugin.saveSettings();
-        this.display();
-      };
-    }
-
     containerEl.createEl('h3', { text: 'Shared Notes' });
+
     const sharedList = containerEl.createEl('div', {
       cls: 'hivemind-shared-list',
     });
 
-    for (const [docId, mapping] of Object.entries(
-      this.plugin.settings.documentMappings
-    )) {
-      const item = sharedList.createEl('div', { cls: 'hivemind-shared-item' });
-      item.createEl('span', { text: mapping.localPath });
-      item.createEl('button', { text: 'Unshare' }).onclick = async () => {
-        await this.plugin.mappingManager.removeMapping(docId);
-        this.display();
-      };
+    const mappings = Object.entries(this.plugin.settings.documentMappings);
+
+    if (mappings.length === 0) {
+      sharedList.createEl('p', {
+        text: 'No shared notes yet. Right-click on a note to share it with your team.',
+        cls: 'hivemind-empty-state',
+      });
+    } else {
+      for (const [docId, mapping] of mappings) {
+        const item = sharedList.createEl('div', {
+          cls: 'hivemind-shared-item',
+        });
+
+        const info = item.createEl('div', { cls: 'hivemind-shared-info' });
+        info.createEl('span', {
+          text: mapping.localPath,
+          cls: 'hivemind-shared-path',
+        });
+        info.createEl('small', {
+          text: `Team: ${mapping.teamId} • Shared: ${new Date(mapping.sharedAt).toLocaleDateString()}`,
+          cls: 'hivemind-shared-meta',
+        });
+
+        const actions = item.createEl('div', {
+          cls: 'hivemind-shared-actions',
+        });
+
+        const copyBtn = actions.createEl('button', {
+          text: 'Copy Link',
+          cls: 'mod-cta',
+        });
+        copyBtn.onclick = async () => {
+          const link = `hivemind://${mapping.teamId}/${docId}`;
+          await navigator.clipboard.writeText(link);
+          new Notice('Share link copied!');
+        };
+
+        const unshareBtn = actions.createEl('button', {
+          text: 'Unshare',
+          cls: 'mod-warning',
+        });
+        unshareBtn.onclick = async () => {
+          await this.plugin.mappingManager.removeMapping(docId);
+          this.display();
+          new Notice(`Unshared: ${mapping.localPath}`);
+        };
+      }
     }
+
+    containerEl.createEl('h3', { text: 'Teams' });
+
+    const teamsList = containerEl.createEl('div', {
+      cls: 'hivemind-teams-list',
+    });
+
+    if (this.plugin.settings.teams.length === 0) {
+      teamsList.createEl('p', {
+        text: 'Not a member of any teams yet.',
+        cls: 'hivemind-empty-state',
+      });
+    } else {
+      for (const teamId of this.plugin.settings.teams) {
+        const teamItem = teamsList.createEl('div', {
+          cls: 'hivemind-team-item',
+        });
+        teamItem.createEl('span', { text: teamId });
+
+        const leaveBtn = teamItem.createEl('button', {
+          text: 'Leave',
+          cls: 'mod-warning',
+        });
+        leaveBtn.onclick = async () => {
+          this.plugin.settings.teams = this.plugin.settings.teams.filter(
+            t => t !== teamId
+          );
+          await this.plugin.saveSettings();
+          this.display();
+          new Notice(`Left team: ${teamId}`);
+        };
+      }
+    }
+
+    new Setting(containerEl)
+      .setName('Join Team')
+      .setDesc('Enter a team ID to join')
+      .addText(text => text.setPlaceholder('team-id'))
+      .addButton(button =>
+        button.setButtonText('Join').onClick(async () => {
+          const input = containerEl.querySelector(
+            'input[placeholder="team-id"]'
+          ) as HTMLInputElement;
+          const teamId = input?.value?.trim();
+          if (teamId) {
+            if (!this.plugin.settings.teams.includes(teamId)) {
+              this.plugin.settings.teams.push(teamId);
+              await this.plugin.saveSettings();
+              input.value = '';
+              this.display();
+              new Notice(`Joined team: ${teamId}`);
+            } else {
+              new Notice('Already a member of this team');
+            }
+          }
+        })
+      );
   }
 }

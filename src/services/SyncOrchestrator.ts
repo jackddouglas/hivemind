@@ -1,18 +1,24 @@
 import { TFile, App, Editor, MarkdownView } from 'obsidian';
 import { DocumentMappingManager } from './DocumentMappingManager';
 import { writeDoc } from '@tonk/keepsync';
+import type { SyncStatusBar } from '../ui/SyncStatusBar';
 
 export class SyncOrchestrator {
   private app: App;
   private mappingManager: DocumentMappingManager;
   private debounceTimers: Map<string, NodeJS.Timeout>;
   public ignoreNextChange: Set<string>;
+  private statusBar?: SyncStatusBar;
 
   constructor(app: App, mappingManager: DocumentMappingManager) {
     this.app = app;
     this.mappingManager = mappingManager;
     this.debounceTimers = new Map();
     this.ignoreNextChange = new Set();
+  }
+
+  setStatusBar(statusBar: SyncStatusBar): void {
+    this.statusBar = statusBar;
   }
 
   setupEventListeners(): void {
@@ -93,6 +99,7 @@ export class SyncOrchestrator {
     if (!mapping) return;
 
     try {
+      this.statusBar?.incrementQueue();
       console.log(`Syncing to keepsync: ${mapping.documentId}`);
 
       const keepsyncPath = `/teams/${mapping.teamId}/documents/${mapping.documentId}/content`;
@@ -100,8 +107,11 @@ export class SyncOrchestrator {
 
       const hash = this.mappingManager.hashContent(content);
       await this.mappingManager.updateLastSyncedHash(mapping.documentId, hash);
+
+      this.statusBar?.decrementQueue();
     } catch (error) {
       console.error('Failed to sync to keepsync:', error);
+      this.statusBar?.decrementQueue();
     }
   }
 
@@ -110,6 +120,7 @@ export class SyncOrchestrator {
     if (!mapping) return;
 
     try {
+      this.statusBar?.incrementQueue();
       const file = this.app.vault.getAbstractFileByPath(mapping.localPath);
       if (!(file instanceof TFile)) return;
 
@@ -122,8 +133,10 @@ export class SyncOrchestrator {
         const hash = this.mappingManager.hashContent(content);
         await this.mappingManager.updateLastSyncedHash(documentId, hash);
       }
+      this.statusBar?.decrementQueue();
     } catch (error) {
       console.error('Failed to sync from keepsync:', error);
+      this.statusBar?.decrementQueue();
     }
   }
 

@@ -1,8 +1,57 @@
-/*
+/* Hivemind Plugin Styles */
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+/* Status Bar */
+.hivemind-status-disconnected {
+  color: var(--text-error);
+}
 
-If your plugin does not need CSS, delete this file.
+.hivemind-status-syncing {
+  color: var(--text-accent);
+}
 
-*/
+/* Settings Tab */
+.hivemind-shared-list,
+.hivemind-teams-list {
+  margin-top: 1rem;
+}
+
+.hivemind-shared-item,
+.hivemind-team-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-secondary);
+}
+
+.hivemind-shared-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.hivemind-shared-path {
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.hivemind-shared-meta {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.hivemind-shared-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.hivemind-empty-state {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 1rem;
+}
