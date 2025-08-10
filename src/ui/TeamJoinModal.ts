@@ -2,16 +2,19 @@ import { App, Modal, Setting, ButtonComponent } from 'obsidian';
 
 export class TeamJoinModal extends Modal {
   private teamId: string;
+  private teamName: string;
   private onSubmit: (enableAutoSync: boolean) => void;
   private autoSyncEnabled: boolean = false;
 
   constructor(
     app: App,
     teamId: string,
+    teamName: string,
     onSubmit: (enableAutoSync: boolean) => void
   ) {
     super(app);
     this.teamId = teamId;
+    this.teamName = teamName;
     this.onSubmit = onSubmit;
   }
 
@@ -20,7 +23,7 @@ export class TeamJoinModal extends Modal {
     contentEl.empty();
 
     // Header
-    contentEl.createEl('h2', { text: `Join Team: ${this.teamId}` });
+    contentEl.createEl('h2', { text: `Join Team: ${this.teamName}` });
     contentEl.createEl('p', {
       text: 'Choose how you want to sync documents from this team:',
       cls: 'hivemind-modal-description',

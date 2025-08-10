@@ -166,10 +166,19 @@ export default class HivemindPlugin extends Plugin {
       name: 'Join a team',
       callback: () => {
         new JoinTeamModal(this.app, async teamId => {
+          // Get team metadata to show team name
+          const teamMetadata = await this.teamManager.getTeamMetadata(teamId);
+          const teamName = teamMetadata?.name || teamId;
+
           // Show auto-sync option modal
-          new TeamJoinModal(this.app, teamId, async enableAutoSync => {
-            await this.teamManager.joinTeam(teamId, enableAutoSync);
-          }).open();
+          new TeamJoinModal(
+            this.app,
+            teamId,
+            teamName,
+            async (enableAutoSync: boolean) => {
+              await this.teamManager.joinTeam(teamId, enableAutoSync);
+            }
+          ).open();
         }).open();
       },
     });
@@ -517,64 +526,6 @@ class HivemindSettingTab extends PluginSettingTab {
           })
       );
 
-    containerEl.createEl('h3', { text: 'Shared Notes' });
-
-    const sharedList = containerEl.createEl('div', {
-      cls: 'hivemind-shared-list',
-    });
-
-    const mappings = Object.entries(this.plugin.settings.documentMappings);
-
-    if (mappings.length === 0) {
-      sharedList.createEl('p', {
-        text: 'No shared notes yet. Right-click on a note to share it with your team.',
-        cls: 'hivemind-empty-state',
-      });
-    } else {
-      for (const [docId, mapping] of mappings) {
-        const item = sharedList.createEl('div', {
-          cls: 'hivemind-shared-item',
-        });
-
-        const info = item.createEl('div', { cls: 'hivemind-shared-info' });
-        info.createEl('span', {
-          text: mapping.localPath,
-          cls: 'hivemind-shared-path',
-        });
-        info.createEl('small', {
-          text: `Team: ${mapping.teamId} • Shared: ${new Date(mapping.sharedAt).toLocaleDateString()}`,
-          cls: 'hivemind-shared-meta',
-        });
-
-        const actions = item.createEl('div', {
-          cls: 'hivemind-shared-actions',
-        });
-
-        const copyBtn = actions.createEl('button', {
-          text: 'Copy Link',
-          cls: 'mod-cta',
-        });
-        copyBtn.onclick = async () => {
-          const link = this.plugin.teamManager.generateShareLink(
-            mapping.teamId,
-            docId
-          );
-          await navigator.clipboard.writeText(link);
-          new Notice('Share link copied!');
-        };
-
-        const unshareBtn = actions.createEl('button', {
-          text: 'Unshare',
-          cls: 'mod-warning',
-        });
-        unshareBtn.onclick = async () => {
-          await this.plugin.mappingManager.removeMapping(docId);
-          this.display();
-          new Notice(`Unshared: ${mapping.localPath}`);
-        };
-      }
-    }
-
     containerEl.createEl('h3', { text: 'Teams' });
 
     const teamsList = containerEl.createEl('div', {
@@ -654,12 +605,22 @@ class HivemindSettingTab extends PluginSettingTab {
           ) as HTMLInputElement;
           const teamId = input?.value?.trim();
           if (teamId) {
+            // Get team metadata to show team name
+            const teamMetadata =
+              await this.plugin.teamManager.getTeamMetadata(teamId);
+            const teamName = teamMetadata?.name || teamId;
+
             // Show auto-sync option modal
-            new TeamJoinModal(this.app, teamId, async enableAutoSync => {
-              await this.plugin.teamManager.joinTeam(teamId, enableAutoSync);
-              input.value = '';
-              this.display();
-            }).open();
+            new TeamJoinModal(
+              this.app,
+              teamId,
+              teamName,
+              async (enableAutoSync: boolean) => {
+                await this.plugin.teamManager.joinTeam(teamId, enableAutoSync);
+                input.value = '';
+                this.display();
+              }
+            ).open();
           }
         })
       );
@@ -691,6 +652,120 @@ class HivemindSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    // Shared Notes section with collapsible functionality
+    const sharedNotesHeader = containerEl.createEl('div', {
+      cls: 'hivemind-section-header',
+    });
+
+    sharedNotesHeader.createEl('h3', {
+      text: 'Shared Notes',
+      cls: 'hivemind-section-title',
+    });
+
+    const mappings = Object.entries(this.plugin.settings.documentMappings);
+    const notesCount = mappings.length;
+
+    // Add collapse/expand button
+    const collapseBtn = sharedNotesHeader.createEl('button', {
+      cls: 'hivemind-collapse-btn',
+      attr: {
+        'aria-expanded': !this.plugin.settings.sharedNotesCollapsed
+          ? 'true'
+          : 'false',
+      },
+    });
+
+    // Set button text with arrow and count
+    const arrow = this.plugin.settings.sharedNotesCollapsed ? '▶' : '▼';
+    collapseBtn.setText(
+      `${arrow} ${notesCount} note${notesCount !== 1 ? 's' : ''}`
+    );
+
+    // Container for the list (collapsible)
+    const sharedListContainer = containerEl.createEl('div', {
+      cls: 'hivemind-collapsible-content',
+    });
+
+    // Apply initial collapsed state
+    if (this.plugin.settings.sharedNotesCollapsed) {
+      sharedListContainer.style.display = 'none';
+    }
+
+    // Handle collapse/expand click
+    collapseBtn.onclick = async () => {
+      this.plugin.settings.sharedNotesCollapsed =
+        !this.plugin.settings.sharedNotesCollapsed;
+      await this.plugin.saveSettings();
+
+      const isCollapsed = this.plugin.settings.sharedNotesCollapsed;
+      const arrow = isCollapsed ? '▶' : '▼';
+      collapseBtn.setText(
+        `${arrow} ${notesCount} note${notesCount !== 1 ? 's' : ''}`
+      );
+      collapseBtn.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+
+      // Animate the collapse/expand
+      if (isCollapsed) {
+        sharedListContainer.style.display = 'none';
+      } else {
+        sharedListContainer.style.display = 'block';
+      }
+    };
+
+    const sharedList = sharedListContainer.createEl('div', {
+      cls: 'hivemind-shared-list',
+    });
+
+    if (mappings.length === 0) {
+      sharedList.createEl('p', {
+        text: 'No shared notes yet. Right-click on a note to share it with your team.',
+        cls: 'hivemind-empty-state',
+      });
+    } else {
+      for (const [docId, mapping] of mappings) {
+        const item = sharedList.createEl('div', {
+          cls: 'hivemind-shared-item',
+        });
+
+        const info = item.createEl('div', { cls: 'hivemind-shared-info' });
+        info.createEl('span', {
+          text: mapping.localPath,
+          cls: 'hivemind-shared-path',
+        });
+        info.createEl('small', {
+          text: `Team: ${mapping.teamId} • Shared: ${new Date(mapping.sharedAt).toLocaleDateString()}`,
+          cls: 'hivemind-shared-meta',
+        });
+
+        const actions = item.createEl('div', {
+          cls: 'hivemind-shared-actions',
+        });
+
+        const copyBtn = actions.createEl('button', {
+          text: 'Copy Link',
+          cls: 'mod-cta',
+        });
+        copyBtn.onclick = async () => {
+          const link = this.plugin.teamManager.generateShareLink(
+            mapping.teamId,
+            docId
+          );
+          await navigator.clipboard.writeText(link);
+          new Notice('Share link copied!');
+        };
+
+        const unshareBtn = actions.createEl('button', {
+          text: 'Unshare',
+          cls: 'mod-warning',
+        });
+        unshareBtn.onclick = async () => {
+          await this.plugin.mappingManager.removeMapping(docId);
+          this.display();
+          new Notice(`Unshared: ${mapping.localPath}`);
+        };
+      }
+    }
   }
 
   private updateConnectionStatus(): void {

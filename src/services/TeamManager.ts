@@ -4,7 +4,7 @@ import type HivemindPlugin from '../../main';
 import { DocumentMappingManager } from './DocumentMappingManager';
 import { TeamDocumentsModal } from '../ui/TeamDocumentsModal';
 import { SaveLocationModal } from '../ui/SaveLocationModal';
-import type { SharedDocumentMetadata } from '../types';
+import type { SharedDocumentMetadata, TeamMetadata } from '../types';
 
 export class TeamManager {
   private app: App;
@@ -28,6 +28,19 @@ export class TeamManager {
         await this.plugin.saveSettings();
       }
 
+      // Update team metadata to add current user to members list
+      const teamMetadata = await this.getTeamMetadata(teamId);
+      if (
+        teamMetadata &&
+        !teamMetadata.members.includes(this.plugin.settings.userId)
+      ) {
+        const updatedMembers = [
+          ...teamMetadata.members,
+          this.plugin.settings.userId,
+        ];
+        await this.updateTeamMetadata(teamId, { members: updatedMembers });
+      }
+
       // Set auto-sync preference if specified
       if (enableAutoSync !== undefined) {
         this.plugin.settings.teamAutoSync[teamId] = enableAutoSync;
@@ -41,8 +54,10 @@ export class TeamManager {
       );
       const teamIndex = teamIndexDoc?.teamIndex || [];
 
+      const teamName = teamMetadata?.name || teamId;
+
       if (!teamIndex || teamIndex.length === 0) {
-        new Notice(`Joined team: ${teamId} (no documents yet)`);
+        new Notice(`Joined team: ${teamName} (no documents yet)`);
         return;
       }
 
@@ -73,7 +88,7 @@ export class TeamManager {
         ).open();
       }
 
-      new Notice(`Joined team: ${teamId}`);
+      new Notice(`Joined team: ${teamName}`);
     } catch (error) {
       console.error('Error joining team:', error);
       new Notice(`Failed to join team: ${error.message}`);
@@ -88,6 +103,10 @@ export class TeamManager {
     removeDocuments: boolean = false
   ): Promise<void> {
     try {
+      // Get team metadata for display name
+      const teamMetadata = await this.getTeamMetadata(teamId);
+      const teamName = teamMetadata?.name || teamId;
+
       if (removeDocuments) {
         // Remove all documents from this team
         const mappings = Object.values(
@@ -99,6 +118,17 @@ export class TeamManager {
         }
       }
 
+      // Update team metadata to remove current user from members list
+      if (
+        teamMetadata &&
+        teamMetadata.members.includes(this.plugin.settings.userId)
+      ) {
+        const updatedMembers = teamMetadata.members.filter(
+          member => member !== this.plugin.settings.userId
+        );
+        await this.updateTeamMetadata(teamId, { members: updatedMembers });
+      }
+
       // Remove team from user's team list
       const index = this.plugin.settings.teams.indexOf(teamId);
       if (index > -1) {
@@ -106,10 +136,46 @@ export class TeamManager {
         await this.plugin.saveSettings();
       }
 
-      new Notice(`Left team: ${teamId}`);
+      new Notice(`Left team: ${teamName}`);
     } catch (error) {
       console.error('Error leaving team:', error);
       new Notice(`Failed to leave team: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get team metadata
+   */
+  async getTeamMetadata(teamId: string): Promise<TeamMetadata | null> {
+    try {
+      const metadataDoc = await readDoc<TeamMetadata>(
+        `/teams/${teamId}/metadata`
+      );
+      return metadataDoc || null;
+    } catch (error) {
+      console.error('Error fetching team metadata:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Update team metadata
+   */
+  async updateTeamMetadata(
+    teamId: string,
+    updates: Partial<TeamMetadata>
+  ): Promise<void> {
+    try {
+      const existing = await this.getTeamMetadata(teamId);
+      if (!existing) {
+        console.error(`Team metadata not found for team: ${teamId}`);
+        return;
+      }
+
+      const updated = { ...existing, ...updates };
+      await writeDoc(`/teams/${teamId}/metadata`, updated);
+    } catch (error) {
+      console.error('Error updating team metadata:', error);
     }
   }
 
@@ -119,7 +185,7 @@ export class TeamManager {
   async createTeam(teamId: string, teamName?: string): Promise<void> {
     try {
       // Initialize team structure in keepsync
-      const teamMetadata = {
+      const teamMetadata: TeamMetadata = {
         id: teamId,
         name: teamName || teamId,
         createdAt: Date.now(),
