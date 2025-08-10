@@ -1,94 +1,143 @@
-# Obsidian Sample Plugin
+# Hivemind
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+Collaborative Obsidian notes with real-time synchronization.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+Hivemind enables seamless collaboration on Obsidian notes through team-based sharing and real-time
+synchronization. Share individual notes with your team, create collaborative workspaces, and keep
+everyone in sync automatically.
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open Sample Modal" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+## Features
 
-## First time developing plugins?
+- **Real-time collaboration**: Share notes with team members and see changes instantly
+- **Team management**: Create teams, join existing ones, and manage team memberships
+- **Auto-sync**: Automatically sync team documents to designated folders
+- **Share links**: Generate shareable links for easy document access
+- **File recovery**: Automatic recovery of missing shared notes
 
-Quick starting guide for new plugin devs:
+## Getting Started
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+### Prerequisites
 
-## Releasing new releases
+- Obsidian (minimum version 0.15.0)
+- A Keepsync server for real-time synchronization
+  - Go to the [Tonk repository](https://github.com/tonk-labs/tonk) to install the Tonk CLI
+  - Create a server with `tonk server create`
+- Node.js (for development)
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+### Installation
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+1. Download the latest release from the releases page
+2. Extract the files to your vault's plugins folder: `VaultFolder/.obsidian/plugins/hivemind/`
+3. Enable the plugin in Obsidian's settings
+4. Configure your sync server URL and user ID in the plugin settings
 
-## Adding your plugin to the community plugin list
+### Configuration
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+1. Open Obsidian Settings → Community Plugins → Hivemind
+2. Set your **User ID** (unique identifier for collaboration)
+3. Set your **Sync Server URL** (WebSocket server for real-time sync)
+4. Click "Save & Connect" to establish connection
 
-## How to use
+## Usage
 
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+### Sharing Notes
 
-## Manually installing the plugin
+**Right-click method:**
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+1. Right-click on any markdown file
+2. Select "🔗 Share with team"
+3. Choose your team from the list
 
-## Improve code quality with eslint (optional)
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- To use eslint with this project, make sure to install eslint from terminal:
-  - `npm install -g eslint`
-- To use eslint to analyze this project use this command:
-  - `eslint main.ts`
-  - eslint will then create a report with suggestions for code improvement by file and line number.
-- If your source code is in a folder, such as `src`, you can use eslint with this command to analyze all files in that folder:
-  - `eslint .\src\`
+**Command palette:**
 
-## Funding URL
+- `Hivemind: Share current note with team`
+- `Hivemind: Unshare current note`
 
-You can include funding URLs where people who use your plugin can financially support it.
+### Team Management
 
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
+**Create a team:**
 
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+- Use command: `Hivemind: Create a new team`
+- Enter team ID and display name
+
+**Join a team:**
+
+- Use command: `Hivemind: Join a team`
+- Enter the team ID provided by team admin
+
+**Join from share link:**
+
+- Use command: `Hivemind: Join document from share link`
+- Paste the `hivemind://` link
+
+### Auto-Sync
+
+Enable auto-sync to automatically download and sync all team documents:
+
+1. Go to plugin settings
+2. Find your team in the Teams section
+3. Click "Enable Auto-sync"
+4. Configure sync folder (default: "Shared")
+
+### Share Links
+
+Generate shareable links for easy collaboration:
+
+1. Right-click on a shared note
+2. Select "📋 Copy share link"
+3. Share the `hivemind://` link with team members
+
+## Commands
+
+All commands are available through the command palette (Ctrl/Cmd + P):
+
+- **Share current note with team** - Share the active note with your team
+- **Unshare current note** - Stop sharing the active note
+- **Create a new team** - Create a new collaboration team
+- **Join a team** - Join an existing team by ID
+- **Join document from share link** - Join using a hivemind:// link
+- **Leave a team** - Leave a team (removes access to team documents)
+- **Reconnect to sync server** - Reconnect if connection is lost
+- **Recover missing shared notes** - Restore any missing shared documents
+
+## Development
+
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/tonklabs/hivemind-obsidian-plugin.git
+cd hivemind-obsidian-plugin
+
+# Install dependencies
+npm install
+
+# Build for development (watch mode)
+npm run dev
+
+# Build for production
+npm run build
 ```
 
-If you have multiple URLs, you can also do:
+### Manual Installation
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
-```
+1. Build the plugin using the steps above
+2. Copy `main.js`, `styles.css`, and `manifest.json` to your vault's plugins folder:
+   ```
+   VaultFolder/.obsidian/plugins/hivemind/
+   ```
+3. Reload Obsidian and enable the plugin
 
-## API Documentation
+## Architecture
 
-See https://github.com/obsidianmd/obsidian-api
+Hivemind uses [Keepsync](https://github.com/tonk-labs/tonk/tree/main/packages/keepsync) for
+real-time synchronization, built on Automerge CRDTs for conflict-free collaborative editing.
+
+## Support
+
+- **Issues**: Report bugs and feature requests on
+  [GitHub Issues](https://github.com/jackddouglas/hivemind)
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
