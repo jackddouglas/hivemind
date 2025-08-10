@@ -27,6 +27,13 @@ export default class HivemindPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
 
+    // Defer initialization until workspace is ready
+    this.app.workspace.onLayoutReady(async () => {
+      await this.initializePlugin();
+    });
+  }
+
+  private async initializePlugin() {
     this.keepsyncService = new KeepsyncService();
     this.mappingManager = new DocumentMappingManager(
       this.app,
@@ -153,6 +160,16 @@ export default class HivemindPlugin extends Plugin {
           this.statusBar.setConnected(false);
           new Notice('Hivemind: Failed to reconnect to sync server');
         }
+      },
+    });
+
+    this.addCommand({
+      id: 'recover-shared-notes',
+      name: 'Recover missing shared notes',
+      callback: async () => {
+        new Notice('Hivemind: Checking for missing shared notes...');
+        await this.fileRecoveryService.reconcileMappings();
+        new Notice('Hivemind: Recovery check completed');
       },
     });
 
