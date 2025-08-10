@@ -1,11 +1,12 @@
 import { TFile, App, Editor, MarkdownView } from 'obsidian';
 import { DocumentMappingManager } from './DocumentMappingManager';
+import { writeDoc } from '@tonk/keepsync';
 
 export class SyncOrchestrator {
   private app: App;
   private mappingManager: DocumentMappingManager;
   private debounceTimers: Map<string, NodeJS.Timeout>;
-  private ignoreNextChange: Set<string>;
+  public ignoreNextChange: Set<string>;
 
   constructor(app: App, mappingManager: DocumentMappingManager) {
     this.app = app;
@@ -38,7 +39,7 @@ export class SyncOrchestrator {
     });
   }
 
-  private handleEditorChange(editor: Editor, info: MarkdownView | any): void {
+  public handleEditorChange(editor: Editor, info: MarkdownView | any): void {
     const file = info.file;
     if (!file) return;
 
@@ -56,7 +57,7 @@ export class SyncOrchestrator {
     });
   }
 
-  private async handleFileModify(file: TFile): Promise<void> {
+  public async handleFileModify(file: TFile): Promise<void> {
     const mapping = this.mappingManager.findMappingByPath(file.path);
     if (!mapping) return;
 
@@ -71,14 +72,14 @@ export class SyncOrchestrator {
     });
   }
 
-  private async handleFileRename(file: TFile, oldPath: string): Promise<void> {
+  public async handleFileRename(file: TFile, oldPath: string): Promise<void> {
     const mapping = this.mappingManager.findMappingByPath(oldPath);
     if (mapping) {
       await this.mappingManager.updateMapping(mapping.documentId, file.path);
     }
   }
 
-  private async handleFileDelete(file: TFile): Promise<void> {
+  public async handleFileDelete(file: TFile): Promise<void> {
     const mapping = this.mappingManager.findMappingByPath(file.path);
     if (mapping) {
       console.log(
@@ -94,6 +95,9 @@ export class SyncOrchestrator {
     try {
       console.log(`Syncing to keepsync: ${mapping.documentId}`);
 
+      const keepsyncPath = `/teams/${mapping.teamId}/documents/${mapping.documentId}/content`;
+      await writeDoc(keepsyncPath, { content });
+
       const hash = this.mappingManager.hashContent(content);
       await this.mappingManager.updateLastSyncedHash(mapping.documentId, hash);
     } catch (error) {
@@ -101,7 +105,7 @@ export class SyncOrchestrator {
     }
   }
 
-  async syncFromKeepsync(documentId: string, content: any): Promise<void> {
+  async syncFromKeepsync(documentId: string, docObject: any): Promise<void> {
     const mapping = this.mappingManager.findMappingById(documentId);
     if (!mapping) return;
 
@@ -109,6 +113,7 @@ export class SyncOrchestrator {
       const file = this.app.vault.getAbstractFileByPath(mapping.localPath);
       if (!(file instanceof TFile)) return;
 
+      const content = docObject?.content || '';
       const currentContent = await this.app.vault.read(file);
       if (content !== currentContent) {
         this.ignoreNextChange.add(file.path);

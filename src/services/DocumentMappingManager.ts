@@ -7,7 +7,11 @@ export class DocumentMappingManager {
   private saveCallback: () => Promise<void>;
   private app: App;
 
-  constructor(app: App, settings: HivemindSettings, saveCallback: () => Promise<void>) {
+  constructor(
+    app: App,
+    settings: HivemindSettings,
+    saveCallback: () => Promise<void>
+  ) {
     this.app = app;
     this.settings = settings;
     this.saveCallback = saveCallback;
@@ -16,7 +20,9 @@ export class DocumentMappingManager {
   }
 
   private loadMappings(): void {
-    for (const [docId, mapping] of Object.entries(this.settings.documentMappings)) {
+    for (const [docId, mapping] of Object.entries(
+      this.settings.documentMappings
+    )) {
       this.mappings.set(docId, mapping);
     }
   }
@@ -43,7 +49,11 @@ export class DocumentMappingManager {
     return documentId;
   }
 
-  async joinSharedDocument(documentId: string, teamId: string, localPath?: string): Promise<void> {
+  async joinSharedDocument(
+    documentId: string,
+    teamId: string,
+    localPath?: string
+  ): Promise<void> {
     if (this.mappings.has(documentId)) {
       throw new Error(`Document ${documentId} is already mapped`);
     }
@@ -87,7 +97,7 @@ export class DocumentMappingManager {
 
     mapping.lastKnownPath = mapping.localPath;
     mapping.localPath = newPath;
-    
+
     this.settings.documentMappings[documentId] = mapping;
     await this.saveCallback();
   }
@@ -120,7 +130,7 @@ export class DocumentMappingManager {
     if (content.length === 0) return hash.toString();
     for (let i = 0; i < content.length; i++) {
       const char = content.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash;
     }
     return hash.toString();

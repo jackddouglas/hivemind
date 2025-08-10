@@ -12,6 +12,7 @@ import { KeepsyncService } from './src/services/KeepsyncService';
 import { DocumentMappingManager } from './src/services/DocumentMappingManager';
 import { FileRecoveryService } from './src/services/FileRecoveryService';
 import { SyncOrchestrator } from './src/services/SyncOrchestrator';
+import { SharedNoteManager } from './src/services/SharedNoteManager';
 
 export default class HivemindPlugin extends Plugin {
   settings: HivemindSettings;
@@ -19,6 +20,7 @@ export default class HivemindPlugin extends Plugin {
   mappingManager: DocumentMappingManager;
   fileRecoveryService: FileRecoveryService;
   syncOrchestrator: SyncOrchestrator;
+  sharedNoteManager: SharedNoteManager;
 
   async onload() {
     await this.loadSettings();
@@ -34,6 +36,12 @@ export default class HivemindPlugin extends Plugin {
       this.mappingManager
     );
     this.syncOrchestrator = new SyncOrchestrator(this.app, this.mappingManager);
+    this.sharedNoteManager = new SharedNoteManager(
+      this.app,
+      this.mappingManager,
+      this.syncOrchestrator,
+      this.settings
+    );
 
     try {
       if (this.settings.syncServerUrl && this.settings.userId) {
@@ -53,7 +61,39 @@ export default class HivemindPlugin extends Plugin {
 
     await this.fileRecoveryService.reconcileMappings();
 
-    this.syncOrchestrator.setupEventListeners();
+    // Restore sync listeners for all shared notes
+    await this.sharedNoteManager.restoreAllSyncListeners();
+
+    // Register event listeners for file operations
+    this.registerEvent(
+      this.app.workspace.on('editor-change', (editor, info) => {
+        this.syncOrchestrator.handleEditorChange(editor, info);
+      })
+    );
+
+    this.registerEvent(
+      this.app.vault.on('modify', file => {
+        if (file instanceof TFile) {
+          this.syncOrchestrator.handleFileModify(file);
+        }
+      })
+    );
+
+    this.registerEvent(
+      this.app.vault.on('rename', (file, oldPath) => {
+        if (file instanceof TFile) {
+          this.syncOrchestrator.handleFileRename(file, oldPath);
+        }
+      })
+    );
+
+    this.registerEvent(
+      this.app.vault.on('delete', file => {
+        if (file instanceof TFile) {
+          this.syncOrchestrator.handleFileDelete(file);
+        }
+      })
+    );
 
     this.addCommand({
       id: 'share-current-note',
@@ -65,7 +105,7 @@ export default class HivemindPlugin extends Plugin {
         const isShared = !!this.mappingManager.findMappingByPath(file.path);
         if (checking) return !isShared;
 
-        this.shareNote(file);
+        this.sharedNoteManager.shareNote(file);
         return true;
       },
     });
@@ -80,7 +120,7 @@ export default class HivemindPlugin extends Plugin {
         const isShared = !!this.mappingManager.findMappingByPath(file.path);
         if (checking) return isShared;
 
-        this.unshareNote(file);
+        this.sharedNoteManager.unshareNote(file);
         return true;
       },
     });
@@ -117,11 +157,9 @@ export default class HivemindPlugin extends Plugin {
               .setTitle(isShared ? '🔗 Unshare note' : '🔗 Share with team')
               .onClick(async () => {
                 if (isShared) {
-                  await this.unshareNote(file);
-                  new Notice(`Unshared: ${file.basename}`);
+                  await this.sharedNoteManager.unshareNote(file);
                 } else {
-                  await this.shareNote(file);
-                  new Notice(`Shared: ${file.basename}`);
+                  await this.sharedNoteManager.shareNote(file);
                 }
               });
           });
@@ -143,6 +181,7 @@ export default class HivemindPlugin extends Plugin {
   }
 
   onunload() {
+    this.sharedNoteManager?.cleanup();
     this.syncOrchestrator?.cleanup();
     this.keepsyncService?.shutdown();
   }
@@ -153,90 +192,6 @@ export default class HivemindPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
-  }
-
-  async shareNote(file: TFile): Promise<void> {
-    try {
-      if (!this.settings.teams.length) {
-        new Notice('Please configure a team in settings first');
-        return;
-      }
-
-      const teamId = this.settings.teams[0];
-      const documentId = await this.mappingManager.shareNewDocument(
-        file,
-        teamId
-      );
-
-      await this.addFrontmatterMetadata(file, documentId);
-
-      new Notice(`Note shared: ${file.basename}`);
-    } catch (error) {
-      console.error('Failed to share note:', error);
-      new Notice('Failed to share note');
-    }
-  }
-
-  async unshareNote(file: TFile): Promise<void> {
-    try {
-      const mapping = this.mappingManager.findMappingByPath(file.path);
-      if (!mapping) return;
-
-      await this.mappingManager.removeMapping(mapping.documentId);
-      await this.removeFrontmatterMetadata(file);
-
-      new Notice(`Note unshared: ${file.basename}`);
-    } catch (error) {
-      console.error('Failed to unshare note:', error);
-      new Notice('Failed to unshare note');
-    }
-  }
-
-  private async addFrontmatterMetadata(
-    file: TFile,
-    documentId: string
-  ): Promise<void> {
-    const content = await this.app.vault.read(file);
-    const frontmatterRegex = /^---\n([\s\S]*?)\n---\n/;
-    const match = content.match(frontmatterRegex);
-
-    if (match) {
-      const frontmatter = match[1];
-      const newFrontmatter = `${frontmatter}\nhivemind-id: ${documentId}`;
-      const newContent = content.replace(
-        frontmatterRegex,
-        `---\n${newFrontmatter}\n---\n`
-      );
-      await this.app.vault.modify(file, newContent);
-    } else {
-      const newContent = `---\nhivemind-id: ${documentId}\n---\n\n${content}`;
-      await this.app.vault.modify(file, newContent);
-    }
-  }
-
-  private async removeFrontmatterMetadata(file: TFile): Promise<void> {
-    const content = await this.app.vault.read(file);
-    const frontmatterRegex = /^---\n([\s\S]*?)\n---\n/;
-    const match = content.match(frontmatterRegex);
-
-    if (match) {
-      const frontmatter = match[1];
-      const lines = frontmatter
-        .split('\n')
-        .filter(line => !line.startsWith('hivemind-id:'));
-
-      if (lines.length === 0) {
-        const newContent = content.replace(frontmatterRegex, '');
-        await this.app.vault.modify(file, newContent);
-      } else {
-        const newFrontmatter = lines.join('\n');
-        const newContent = content.replace(
-          frontmatterRegex,
-          `---\n${newFrontmatter}\n---\n`
-        );
-        await this.app.vault.modify(file, newContent);
-      }
-    }
   }
 }
 

@@ -17,7 +17,7 @@ export class FileRecoveryService {
 
     for (const mapping of allMappings) {
       const file = this.app.vault.getAbstractFileByPath(mapping.localPath);
-      
+
       if (!file || !(file instanceof TFile)) {
         orphanedMappings.push(mapping);
       }
@@ -28,10 +28,13 @@ export class FileRecoveryService {
     }
   }
 
-  private async attemptRecovery(orphanedMappings: LocalDocumentMapping[]): Promise<void> {
+  private async attemptRecovery(
+    orphanedMappings: LocalDocumentMapping[]
+  ): Promise<void> {
     for (const mapping of orphanedMappings) {
       const basename = this.getBasename(mapping.lastKnownPath);
-      const candidates = this.app.vault.getFiles()
+      const candidates = this.app.vault
+        .getFiles()
         .filter(f => f.basename === basename);
 
       if (candidates.length === 1) {
@@ -57,36 +60,43 @@ export class FileRecoveryService {
     }
   }
 
-  private async findByContent(mapping: LocalDocumentMapping): Promise<TFile | null> {
+  private async findByContent(
+    mapping: LocalDocumentMapping
+  ): Promise<TFile | null> {
     const files = this.app.vault.getFiles();
-    
+
     for (const file of files) {
       const content = await this.app.vault.read(file);
       const hash = this.mappingManager.hashContent(content);
-      
-      if (hash === mapping.lastSyncedHash || 
-          this.calculateSimilarity(content, mapping) > 0.9) {
+
+      if (
+        hash === mapping.lastSyncedHash ||
+        this.calculateSimilarity(content, mapping) > 0.9
+      ) {
         return file;
       }
     }
-    
+
     return null;
   }
 
   private async findByFrontmatter(documentId: string): Promise<TFile | null> {
     const files = this.app.vault.getMarkdownFiles();
-    
+
     for (const file of files) {
       const cache = this.app.metadataCache.getFileCache(file);
       if (cache?.frontmatter?.['hivemind-id'] === documentId) {
         return file;
       }
     }
-    
+
     return null;
   }
 
-  private async relinkMapping(mapping: LocalDocumentMapping, file: TFile): Promise<void> {
+  private async relinkMapping(
+    mapping: LocalDocumentMapping,
+    file: TFile
+  ): Promise<void> {
     await this.mappingManager.updateMapping(mapping.documentId, file.path);
   }
 
@@ -96,13 +106,18 @@ export class FileRecoveryService {
     return filename.replace(/\.[^/.]+$/, '');
   }
 
-  private calculateSimilarity(content: string, mapping: LocalDocumentMapping): number {
+  private calculateSimilarity(
+    content: string,
+    mapping: LocalDocumentMapping
+  ): number {
     return 0.5;
   }
 
-  private async promptUserForRecovery(mapping: LocalDocumentMapping): Promise<void> {
-    return new Promise((resolve) => {
-      new RecoveryModal(this.app, mapping, async (choice) => {
+  private async promptUserForRecovery(
+    mapping: LocalDocumentMapping
+  ): Promise<void> {
+    return new Promise(resolve => {
+      new RecoveryModal(this.app, mapping, async choice => {
         switch (choice) {
           case 'relink':
             break;
@@ -118,8 +133,12 @@ export class FileRecoveryService {
     });
   }
 
-  private async recreateFromRemote(mapping: LocalDocumentMapping): Promise<void> {
-    console.log(`Would recreate file from remote for mapping: ${mapping.documentId}`);
+  private async recreateFromRemote(
+    mapping: LocalDocumentMapping
+  ): Promise<void> {
+    console.log(
+      `Would recreate file from remote for mapping: ${mapping.documentId}`
+    );
   }
 }
 
@@ -135,8 +154,8 @@ class RecoveryModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.createEl('h2', { text: 'Shared Note Not Found' });
-    contentEl.createEl('p', { 
-      text: `Cannot find shared note: ${this.mapping.lastKnownPath}` 
+    contentEl.createEl('p', {
+      text: `Cannot find shared note: ${this.mapping.lastKnownPath}`,
     });
 
     new ButtonComponent(contentEl)
@@ -153,11 +172,9 @@ class RecoveryModal extends Modal {
         this.onChoice('recreate');
       });
 
-    new ButtonComponent(contentEl)
-      .setButtonText('Ignore')
-      .onClick(() => {
-        this.close();
-        this.onChoice('ignore');
-      });
+    new ButtonComponent(contentEl).setButtonText('Ignore').onClick(() => {
+      this.close();
+      this.onChoice('ignore');
+    });
   }
 }

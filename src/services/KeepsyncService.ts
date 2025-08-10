@@ -12,18 +12,21 @@ export class KeepsyncService {
 
     try {
       // Convert ws:// to http:// for the HTTP API
-      const httpUrl = serverUrl.replace('ws://', 'http://').replace('wss://', 'https://');
-      
+      const httpUrl = serverUrl
+        .replace('ws://', 'http://')
+        .replace('wss://', 'https://');
+
       // Use the original WebSocket URL for the network adapter
       const wsAdapter = new BrowserWebSocketClientAdapter(`${serverUrl}/sync`);
       const storage = new IndexedDBStorageAdapter();
 
-      configureSyncEngine({
+      const engine = await configureSyncEngine({
         url: httpUrl,
         network: [wsAdapter as any],
         storage,
       });
 
+      await engine.whenReady();
       this.initialized = true;
     } catch (error) {
       console.error('Failed to initialize KeepsyncService:', error);
