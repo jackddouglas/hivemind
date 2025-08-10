@@ -5,6 +5,8 @@ import {
   Setting,
   TFile,
   Notice,
+  Modal,
+  TextComponent,
 } from 'obsidian';
 
 import { HivemindSettings, DEFAULT_SETTINGS } from './src/types';
@@ -13,6 +15,7 @@ import { DocumentMappingManager } from './src/services/DocumentMappingManager';
 import { FileRecoveryService } from './src/services/FileRecoveryService';
 import { SyncOrchestrator } from './src/services/SyncOrchestrator';
 import { SharedNoteManager } from './src/services/SharedNoteManager';
+import { TeamManager } from './src/services/TeamManager';
 import { SyncStatusBar } from './src/ui/SyncStatusBar';
 
 export default class HivemindPlugin extends Plugin {
@@ -22,6 +25,7 @@ export default class HivemindPlugin extends Plugin {
   fileRecoveryService: FileRecoveryService;
   syncOrchestrator: SyncOrchestrator;
   sharedNoteManager: SharedNoteManager;
+  teamManager: TeamManager;
   statusBar: SyncStatusBar;
 
   async onload() {
@@ -51,6 +55,7 @@ export default class HivemindPlugin extends Plugin {
       this.syncOrchestrator,
       this.settings
     );
+    this.teamManager = new TeamManager(this, this.mappingManager);
     this.statusBar = new SyncStatusBar(this);
     this.syncOrchestrator.setStatusBar(this.statusBar);
 
@@ -109,6 +114,7 @@ export default class HivemindPlugin extends Plugin {
       })
     );
 
+    // Note sharing commands
     this.addCommand({
       id: 'share-current-note',
       name: 'Share current note with team',
@@ -139,6 +145,58 @@ export default class HivemindPlugin extends Plugin {
       },
     });
 
+    // Team management commands
+    this.addCommand({
+      id: 'create-team',
+      name: 'Create a new team',
+      callback: () => {
+        new CreateTeamModal(this.app, async (teamId, teamName) => {
+          await this.teamManager.createTeam(teamId, teamName);
+        }).open();
+      },
+    });
+
+    this.addCommand({
+      id: 'join-team',
+      name: 'Join a team',
+      callback: () => {
+        new JoinTeamModal(this.app, async (teamId) => {
+          await this.teamManager.joinTeam(teamId);
+        }).open();
+      },
+    });
+
+    this.addCommand({
+      id: 'join-from-share-link',
+      name: 'Join document from share link',
+      callback: () => {
+        new ShareLinkModal(this.app, async (link) => {
+          await this.teamManager.joinFromShareLink(link);
+        }).open();
+      },
+    });
+
+    this.addCommand({
+      id: 'leave-team',
+      name: 'Leave a team',
+      callback: async () => {
+        const teams = this.teamManager.getTeams();
+        if (teams.length === 0) {
+          new Notice('You are not a member of any teams');
+          return;
+        }
+        
+        // For simplicity, if only one team, leave it directly
+        if (teams.length === 1) {
+          await this.teamManager.leaveTeam(teams[0], false);
+        } else {
+          // TODO: Show modal to select which team to leave
+          new Notice('Use the settings tab to leave specific teams');
+        }
+      },
+    });
+
+    // System commands
     this.addCommand({
       id: 'reconnect-sync-server',
       name: 'Reconnect to sync server',
@@ -173,6 +231,7 @@ export default class HivemindPlugin extends Plugin {
       },
     });
 
+    // File menu integration
     this.registerEvent(
       this.app.workspace.on('file-menu', (menu, file) => {
         if (file instanceof TFile && file.extension === 'md') {
@@ -194,7 +253,10 @@ export default class HivemindPlugin extends Plugin {
           if (isShared && mapping) {
             menu.addItem(item => {
               item.setTitle('📋 Copy share link').onClick(() => {
-                const link = `hivemind://${mapping.teamId}/${mapping.documentId}`;
+                const link = this.teamManager.generateShareLink(
+                  mapping.teamId,
+                  mapping.documentId
+                );
                 navigator.clipboard.writeText(link);
                 new Notice('Share link copied!');
               });
@@ -220,6 +282,141 @@ export default class HivemindPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+}
+
+// Modal for creating a new team
+class CreateTeamModal extends Modal {
+  private onSubmit: (teamId: string, teamName: string) => void;
+
+  constructor(app: App, onSubmit: (teamId: string, teamName: string) => void) {
+    super(app);
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl('h2', { text: 'Create New Team' });
+
+    const teamIdSetting = new Setting(contentEl)
+      .setName('Team ID')
+      .setDesc('Unique identifier for the team (e.g., "my-team")')
+      .addText(text => text.setPlaceholder('team-id'));
+
+    const teamNameSetting = new Setting(contentEl)
+      .setName('Team Name')
+      .setDesc('Display name for the team')
+      .addText(text => text.setPlaceholder('My Team'));
+
+    new Setting(contentEl)
+      .addButton(btn => btn
+        .setButtonText('Cancel')
+        .onClick(() => this.close()))
+      .addButton(btn => btn
+        .setButtonText('Create')
+        .setCta()
+        .onClick(() => {
+          const teamId = (teamIdSetting.components[0] as TextComponent).getValue();
+          const teamName = (teamNameSetting.components[0] as TextComponent).getValue();
+          
+          if (teamId) {
+            this.onSubmit(teamId, teamName || teamId);
+            this.close();
+          } else {
+            new Notice('Please enter a team ID');
+          }
+        }));
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+// Modal for joining a team
+class JoinTeamModal extends Modal {
+  private onSubmit: (teamId: string) => void;
+
+  constructor(app: App, onSubmit: (teamId: string) => void) {
+    super(app);
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl('h2', { text: 'Join Team' });
+
+    const teamIdSetting = new Setting(contentEl)
+      .setName('Team ID')
+      .setDesc('Enter the ID of the team you want to join')
+      .addText(text => text.setPlaceholder('team-id'));
+
+    new Setting(contentEl)
+      .addButton(btn => btn
+        .setButtonText('Cancel')
+        .onClick(() => this.close()))
+      .addButton(btn => btn
+        .setButtonText('Join')
+        .setCta()
+        .onClick(() => {
+          const teamId = (teamIdSetting.components[0] as TextComponent).getValue();
+          
+          if (teamId) {
+            this.onSubmit(teamId);
+            this.close();
+          } else {
+            new Notice('Please enter a team ID');
+          }
+        }));
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+// Modal for joining via share link
+class ShareLinkModal extends Modal {
+  private onSubmit: (link: string) => void;
+
+  constructor(app: App, onSubmit: (link: string) => void) {
+    super(app);
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl('h2', { text: 'Join from Share Link' });
+
+    const linkSetting = new Setting(contentEl)
+      .setName('Share Link')
+      .setDesc('Paste the hivemind:// share link')
+      .addText(text => text.setPlaceholder('hivemind://team-id/document-id'));
+
+    new Setting(contentEl)
+      .addButton(btn => btn
+        .setButtonText('Cancel')
+        .onClick(() => this.close()))
+      .addButton(btn => btn
+        .setButtonText('Join')
+        .setCta()
+        .onClick(() => {
+          const link = (linkSetting.components[0] as TextComponent).getValue();
+          
+          if (link) {
+            this.onSubmit(link);
+            this.close();
+          } else {
+            new Notice('Please enter a share link');
+          }
+        }));
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
   }
 }
 
@@ -301,7 +498,10 @@ class HivemindSettingTab extends PluginSettingTab {
           cls: 'mod-cta',
         });
         copyBtn.onclick = async () => {
-          const link = `hivemind://${mapping.teamId}/${docId}`;
+          const link = this.plugin.teamManager.generateShareLink(
+            mapping.teamId,
+            docId
+          );
           await navigator.clipboard.writeText(link);
           new Notice('Share link copied!');
         };
@@ -326,7 +526,7 @@ class HivemindSettingTab extends PluginSettingTab {
 
     if (this.plugin.settings.teams.length === 0) {
       teamsList.createEl('p', {
-        text: 'Not a member of any teams yet.',
+        text: 'Not a member of any teams yet. Use the command palette to create or join a team.',
         cls: 'hivemind-empty-state',
       });
     } else {
@@ -341,18 +541,14 @@ class HivemindSettingTab extends PluginSettingTab {
           cls: 'mod-warning',
         });
         leaveBtn.onclick = async () => {
-          this.plugin.settings.teams = this.plugin.settings.teams.filter(
-            t => t !== teamId
-          );
-          await this.plugin.saveSettings();
+          await this.plugin.teamManager.leaveTeam(teamId, false);
           this.display();
-          new Notice(`Left team: ${teamId}`);
         };
       }
     }
 
     new Setting(containerEl)
-      .setName('Join Team')
+      .setName('Quick Join Team')
       .setDesc('Enter a team ID to join')
       .addText(text => text.setPlaceholder('team-id'))
       .addButton(button =>
@@ -362,15 +558,9 @@ class HivemindSettingTab extends PluginSettingTab {
           ) as HTMLInputElement;
           const teamId = input?.value?.trim();
           if (teamId) {
-            if (!this.plugin.settings.teams.includes(teamId)) {
-              this.plugin.settings.teams.push(teamId);
-              await this.plugin.saveSettings();
-              input.value = '';
-              this.display();
-              new Notice(`Joined team: ${teamId}`);
-            } else {
-              new Notice('Already a member of this team');
-            }
+            await this.plugin.teamManager.joinTeam(teamId);
+            input.value = '';
+            this.display();
           }
         })
       );

@@ -96,6 +96,10 @@ export class SharedNoteManager {
     const keepsyncPath = `/teams/${mapping.teamId}/documents/${documentId}/content`;
 
     try {
+      // Initial sync to keepsync - create the document first
+      const content = await this.app.vault.read(file);
+      await writeDoc(keepsyncPath, { content });
+
       // Listen to remote changes
       const unsubscribe = await listenToDoc(keepsyncPath, async payload => {
         const { doc } = payload;
@@ -124,10 +128,6 @@ export class SharedNoteManager {
       });
 
       this.listeners.set(documentId, unsubscribe);
-
-      // Initial sync to keepsync
-      const content = await this.app.vault.read(file);
-      await writeDoc(keepsyncPath, { content });
     } catch (error) {
       console.error('Failed to setup bidirectional sync:', error);
       throw error;
@@ -240,7 +240,7 @@ export class SharedNoteManager {
     const indexPath = `/teams/${teamId}/index`;
 
     try {
-      const indexDoc = await readDoc<any>(indexPath);
+      const indexDoc = await readDoc<{ teamIndex: string[] }>(indexPath);
       let teamIndex = indexDoc?.teamIndex || [];
 
       if (action === 'add') {

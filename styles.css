@@ -55,3 +55,97 @@
   text-align: center;
   padding: 1rem;
 }
+
+/* Team Management UI Styles */
+.hivemind-modal-description {
+  margin-bottom: 1em;
+  color: var(--text-muted);
+}
+
+.hivemind-document-list {
+  max-height: 400px;
+  overflow-y: auto;
+  margin: 1em 0;
+}
+
+.hivemind-document-item {
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding: 0.5em 0;
+}
+
+.hivemind-document-item:last-child {
+  border-bottom: none;
+}
+
+.hivemind-empty-message {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 2em;
+}
+
+.hivemind-button-row {
+  display: flex;
+  gap: 0.5em;
+  margin-bottom: 1em;
+}
+
+.hivemind-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5em;
+  margin-top: 1.5em;
+  padding-top: 1em;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.hivemind-path-preview {
+  background: var(--background-secondary);
+  padding: 1em;
+  border-radius: 4px;
+  margin: 1em 0;
+}
+
+.hivemind-path-preview code {
+  background: var(--background-primary);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+}
+
+.hivemind-warning {
+  color: var(--text-error);
+  margin-top: 0.5em;
+  font-size: 0.9em;
+}
+
+.hivemind-suggestions {
+  margin-top: 1em;
+}
+
+.hivemind-suggestions-title {
+  font-weight: 600;
+  margin-bottom: 0.5em;
+}
+
+.hivemind-suggestion-item {
+  display: inline-block;
+  margin-right: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.hivemind-teams-list {
+  margin: 1em 0;
+}
+
+.hivemind-team-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5em;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  margin-bottom: 0.5em;
+}
+
+.hivemind-team-item button {
+  margin-left: 1em;
+}

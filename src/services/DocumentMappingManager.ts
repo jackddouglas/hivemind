@@ -52,7 +52,8 @@ export class DocumentMappingManager {
   async joinSharedDocument(
     documentId: string,
     teamId: string,
-    localPath?: string
+    localPath?: string,
+    sharedBy?: string
   ): Promise<void> {
     if (this.mappings.has(documentId)) {
       throw new Error(`Document ${documentId} is already mapped`);
@@ -69,6 +70,7 @@ export class DocumentMappingManager {
       lastSyncedHash: '',
       lastKnownPath: localPath,
       sharedAt: Date.now(),
+      sharedBy,
     };
 
     this.mappings.set(documentId, mapping);
