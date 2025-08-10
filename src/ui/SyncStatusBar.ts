@@ -27,7 +27,7 @@ export class SyncStatusBar {
 
   private updateDisplay() {
     if (!this.isConnected) {
-      this.statusEl.setText('Hivemind: ⚠️ Disconnected');
+      this.statusEl.setText('Hivemind: Disconnected');
       this.statusEl.addClass('hivemind-status-disconnected');
       return;
     }
@@ -53,4 +53,3 @@ export class SyncStatusBar {
     this.statusEl.remove();
   }
 }
-

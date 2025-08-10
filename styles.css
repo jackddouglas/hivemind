@@ -149,3 +149,27 @@
 .hivemind-team-item button {
   margin-left: 1em;
 }
+
+/* Connection Status Styles */
+.hivemind-connection-status {
+  margin-bottom: 1.5rem;
+  padding: 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.hivemind-status-connected {
+  color: var(--text-success);
+  font-weight: 500;
+}
+
+.hivemind-status-configured {
+  color: var(--text-warning);
+  font-weight: 500;
+}
+
+.hivemind-status-not-configured {
+  color: var(--text-error);
+  font-weight: 500;
+}

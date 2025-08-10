@@ -59,23 +59,15 @@ export default class HivemindPlugin extends Plugin {
     this.statusBar = new SyncStatusBar(this);
     this.syncOrchestrator.setStatusBar(this.statusBar);
 
-    try {
-      if (this.settings.syncServerUrl && this.settings.userId) {
-        await this.keepsyncService.initialize(this.settings.syncServerUrl);
-        this.statusBar.setConnected(true);
-        new Notice('Hivemind: Connected to sync server');
-      } else {
-        this.statusBar.setConnected(false);
-        new Notice(
-          'Hivemind: Please configure server URL and user ID in settings'
-        );
-      }
-    } catch (error) {
-      console.error('Failed to initialize Keepsync:', error);
+    // Only attempt to connect if both settings are configured
+    if (this.settings.syncServerUrl && this.settings.userId) {
+      await this.initializeServices();
+    } else {
       this.statusBar.setConnected(false);
-      new Notice(
-        'Hivemind: Failed to connect to sync server. Check console for details.'
-      );
+      // Only show notice on first run, not every startup
+      if (!this.settings.syncServerUrl && !this.settings.userId) {
+        new Notice('Hivemind: Open settings to configure your sync server and user ID');
+      }
     }
 
     await this.fileRecoveryService.reconcileMappings();
@@ -269,6 +261,22 @@ export default class HivemindPlugin extends Plugin {
     this.addSettingTab(new HivemindSettingTab(this.app, this));
   }
 
+  async initializeServices(): Promise<boolean> {
+    try {
+      if (!this.settings.syncServerUrl || !this.settings.userId) {
+        throw new Error('Server URL and User ID are required');
+      }
+
+      await this.keepsyncService.initialize(this.settings.syncServerUrl);
+      this.statusBar.setConnected(true);
+      return true;
+    } catch (error) {
+      console.error('Failed to initialize Keepsync:', error);
+      this.statusBar.setConnected(false);
+      throw error;
+    }
+  }
+
   onunload() {
     this.statusBar?.destroy();
     this.sharedNoteManager?.cleanup();
@@ -422,6 +430,9 @@ class ShareLinkModal extends Modal {
 
 class HivemindSettingTab extends PluginSettingTab {
   plugin: HivemindPlugin;
+  private statusEl: HTMLElement;
+  private userIdInput: TextComponent;
+  private serverUrlInput: TextComponent;
 
   constructor(app: App, plugin: HivemindPlugin) {
     super(app, plugin);
@@ -434,29 +445,50 @@ class HivemindSettingTab extends PluginSettingTab {
 
     containerEl.createEl('h2', { text: 'Hivemind Settings' });
 
+    // Connection status indicator
+    this.statusEl = containerEl.createEl('div', {
+      cls: 'hivemind-connection-status',
+    });
+    this.updateConnectionStatus();
+
     new Setting(containerEl)
       .setName('User ID')
       .setDesc('Your unique identifier for team collaboration')
-      .addText(text =>
+      .addText(text => {
+        this.userIdInput = text;
         text
           .setPlaceholder('your-username')
           .setValue(this.plugin.settings.userId)
           .onChange(async value => {
             this.plugin.settings.userId = value;
             await this.plugin.saveSettings();
-          })
-      );
+          });
+      });
 
     new Setting(containerEl)
       .setName('Sync Server URL')
       .setDesc('WebSocket server for real-time sync')
-      .addText(text =>
+      .addText(text => {
+        this.serverUrlInput = text;
         text
           .setPlaceholder('ws://localhost:7777')
           .setValue(this.plugin.settings.syncServerUrl)
           .onChange(async value => {
             this.plugin.settings.syncServerUrl = value;
             await this.plugin.saveSettings();
+          });
+      });
+
+    // Save & Connect button
+    new Setting(containerEl)
+      .setName('Connection')
+      .setDesc('Save settings and connect to sync server')
+      .addButton(button =>
+        button
+          .setButtonText('Save & Connect')
+          .setCta()
+          .onClick(async () => {
+            await this.handleSaveAndConnect();
           })
       );
 
@@ -564,5 +596,74 @@ class HivemindSettingTab extends PluginSettingTab {
           }
         })
       );
+  }
+
+  private updateConnectionStatus(): void {
+    if (!this.statusEl) return;
+
+    this.statusEl.empty();
+    
+    const isConnected = this.plugin.keepsyncService?.isInitialized();
+    const hasSettings = this.plugin.settings.userId && this.plugin.settings.syncServerUrl;
+    
+    if (isConnected) {
+      this.statusEl.createEl('div', {
+        text: '🟢 Connected to sync server',
+        cls: 'hivemind-status-connected',
+      });
+    } else if (hasSettings) {
+      this.statusEl.createEl('div', {
+        text: '🟡 Settings configured, not connected',
+        cls: 'hivemind-status-configured',
+      });
+    } else {
+      this.statusEl.createEl('div', {
+        text: '🔴 Not configured',
+        cls: 'hivemind-status-not-configured',
+      });
+    }
+  }
+
+  private async handleSaveAndConnect(): Promise<void> {
+    const userId = this.userIdInput.getValue().trim();
+    const serverUrl = this.serverUrlInput.getValue().trim();
+
+    // Validation
+    if (!userId) {
+      new Notice('Please enter a User ID');
+      return;
+    }
+
+    if (!serverUrl) {
+      new Notice('Please enter a Sync Server URL');
+      return;
+    }
+
+    // Update settings
+    this.plugin.settings.userId = userId;
+    this.plugin.settings.syncServerUrl = serverUrl;
+    await this.plugin.saveSettings();
+
+    // Show loading state
+    const button = this.containerEl.querySelector('.mod-cta') as HTMLButtonElement;
+    if (button) {
+      button.textContent = 'Connecting...';
+      button.disabled = true;
+    }
+
+    try {
+      await this.plugin.initializeServices();
+      new Notice('Hivemind: Successfully connected to sync server!');
+      this.updateConnectionStatus();
+    } catch (error) {
+      console.error('Connection failed:', error);
+      new Notice(`Hivemind: Failed to connect - ${error.message}`);
+    } finally {
+      // Reset button state
+      if (button) {
+        button.textContent = 'Save & Connect';
+        button.disabled = false;
+      }
+    }
   }
 }

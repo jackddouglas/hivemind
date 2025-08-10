@@ -245,7 +245,7 @@ export class SharedNoteManager {
 
       if (action === 'add') {
         if (!teamIndex.includes(documentId)) {
-          teamIndex.push(documentId);
+          teamIndex = [...teamIndex, documentId];
         }
       } else if (action === 'remove') {
         teamIndex = teamIndex.filter((id: string) => id !== documentId);

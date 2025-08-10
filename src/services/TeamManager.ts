@@ -112,7 +112,7 @@ export class TeamManager {
       };
 
       await writeDoc(`/teams/${teamId}/metadata`, teamMetadata);
-      await writeDoc(`/teams/${teamId}/index`, []);
+      await writeDoc(`/teams/${teamId}/index`, { teamIndex: [] });
 
       // Add to user's teams
       if (!this.plugin.settings.teams.includes(teamId)) {
@@ -166,7 +166,7 @@ export class TeamManager {
       let index = indexDoc?.teamIndex || [];
 
       if (action === 'add' && !index.includes(documentId)) {
-        index.push(documentId);
+        index = [...index, documentId];
       } else if (action === 'remove') {
         index = index.filter(id => id !== documentId);
       }
