@@ -270,3 +270,118 @@
   transition: all 0.3s ease;
   overflow: hidden;
 }
+
+/* Linked Files Share Modal Styles */
+.hivemind-quick-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.hivemind-files-list {
+  max-height: 400px;
+  overflow-y: auto;
+  margin: 1rem 0;
+}
+
+.hivemind-documents-list {
+  margin-bottom: 1rem;
+}
+
+.hivemind-documents-header {
+  margin: 0 0 0.75rem 0;
+  font-weight: 600;
+  color: var(--text-normal);
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.hivemind-file-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  transition: all 0.2s ease;
+}
+
+.hivemind-file-item:hover {
+  background: var(--background-secondary);
+  border-color: var(--background-modifier-border-hover);
+}
+
+.hivemind-file-item.is-shared {
+  opacity: 0.6;
+  background: var(--background-secondary);
+}
+
+.hivemind-file-checkbox {
+  margin-top: 0.125rem;
+  cursor: pointer;
+}
+
+.hivemind-file-checkbox:disabled {
+  cursor: not-allowed;
+}
+
+.hivemind-file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.hivemind-file-name {
+  font-weight: 500;
+  color: var(--text-normal);
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.hivemind-file-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.hivemind-file-path {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  font-family: var(--font-monospace);
+  word-break: break-all;
+}
+
+.hivemind-file-badges {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.hivemind-badge {
+  font-size: 0.75em;
+  padding: 0.125rem 0.5rem;
+  border-radius: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.25px;
+}
+
+.hivemind-badge-link {
+  background: var(--color-blue-rgb);
+  color: white;
+  background: rgba(var(--color-blue-rgb), 0.8);
+}
+
+.hivemind-badge-embed {
+  background: rgba(var(--color-green-rgb), 0.8);
+  color: white;
+}
+
+.hivemind-badge-shared {
+  background: rgba(var(--color-orange-rgb), 0.8);
+  color: white;
+}

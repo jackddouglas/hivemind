@@ -3,6 +3,7 @@ import { DocumentMappingManager } from './DocumentMappingManager';
 import { SyncOrchestrator } from './SyncOrchestrator';
 import { HivemindSettings, SharedDocumentMetadata } from '../types';
 import { listenToDoc, writeDoc, readDoc } from '@tonk/keepsync';
+import { LinkedFilesShareModal, LinkedFile } from '../ui/LinkedFilesShareModal';
 
 export class SharedNoteManager {
   private app: App;
@@ -31,29 +32,176 @@ export class SharedNoteManager {
     }
 
     try {
-      // 1. Generate document ID and create mapping
-      const documentId = await this.mappingManager.shareNewDocument(
-        file,
-        currentTeamId
-      );
+      // Check for linked files first
+      const linkedFiles = await this.detectLinkedFiles(file);
 
-      // 2. Add frontmatter metadata
-      await this.addFrontmatterMetadata(file, documentId);
-
-      // 3. Create shared document metadata
-      await this.createSharedDocumentMetadata(file, documentId, currentTeamId);
-
-      // 4. Set up bidirectional sync
-      await this.setupBidirectionalSync(file, documentId);
-
-      // 5. Update team index
-      await this.updateTeamIndex('add', documentId, currentTeamId);
-
-      new Notice(`Shared: ${file.basename}`);
+      if (linkedFiles.length > 0) {
+        // Show modal to let user choose which linked files to share
+        return new Promise<void>((resolve, reject) => {
+          new LinkedFilesShareModal(
+            this.app,
+            linkedFiles,
+            async (selectedFiles: TFile[]) => {
+              try {
+                await this.shareNoteWithLinkedFiles(
+                  file,
+                  selectedFiles,
+                  currentTeamId
+                );
+                resolve();
+              } catch (error) {
+                reject(error);
+              }
+            },
+            () => {
+              // User cancelled, still share the main document
+              this.shareMainDocument(file, currentTeamId)
+                .then(resolve)
+                .catch(reject);
+            }
+          ).open();
+        });
+      } else {
+        // No linked files, proceed with normal sharing
+        await this.shareMainDocument(file, currentTeamId);
+      }
     } catch (error) {
       console.error('Failed to share note:', error);
       new Notice(`Failed to share note: ${error.message}`);
     }
+  }
+
+  private async shareMainDocument(file: TFile, teamId: string): Promise<void> {
+    // 1. Generate document ID and create mapping
+    const documentId = await this.mappingManager.shareNewDocument(file, teamId);
+
+    // 2. Add frontmatter metadata
+    await this.addFrontmatterMetadata(file, documentId);
+
+    // 3. Create shared document metadata
+    await this.createSharedDocumentMetadata(file, documentId, teamId);
+
+    // 4. Set up bidirectional sync
+    await this.setupBidirectionalSync(file, documentId);
+
+    // 5. Update team index
+    await this.updateTeamIndex('add', documentId, teamId);
+
+    new Notice(`Shared: ${file.basename}`);
+  }
+
+  private async shareNoteWithLinkedFiles(
+    file: TFile,
+    linkedFiles: TFile[],
+    teamId: string
+  ): Promise<void> {
+    // First share the main document
+    await this.shareMainDocument(file, teamId);
+
+    // Then share each selected linked file
+    let sharedCount = 0;
+    for (const linkedFile of linkedFiles) {
+      try {
+        await this.shareMainDocument(linkedFile, teamId);
+        sharedCount++;
+      } catch (error) {
+        console.error(`Failed to share linked file ${linkedFile.path}:`, error);
+        new Notice(`Warning: Failed to share ${linkedFile.name}`);
+      }
+    }
+
+    if (sharedCount > 0) {
+      new Notice(
+        `Shared: ${file.basename} + ${sharedCount} linked file${sharedCount !== 1 ? 's' : ''}`
+      );
+    }
+  }
+
+  private async detectLinkedFiles(file: TFile): Promise<LinkedFile[]> {
+    const linkedFiles: LinkedFile[] = [];
+    const processedPaths = new Set<string>();
+
+    const processFile = async (
+      currentFile: TFile,
+      depth: number = 0
+    ): Promise<void> => {
+      // Prevent infinite recursion and cycles
+      if (depth > 3 || processedPaths.has(currentFile.path)) {
+        return;
+      }
+      processedPaths.add(currentFile.path);
+
+      const cache = this.app.metadataCache.getFileCache(currentFile);
+      if (!cache) return;
+
+      // Process regular links [[...]] - only markdown documents
+      if (cache.links) {
+        for (const link of cache.links) {
+          const linkedFile = this.app.metadataCache.getFirstLinkpathDest(
+            link.link,
+            currentFile.path
+          );
+
+          if (
+            linkedFile &&
+            linkedFile.extension === 'md' &&
+            !processedPaths.has(linkedFile.path)
+          ) {
+            const isShared = !!this.mappingManager.findMappingByPath(
+              linkedFile.path
+            );
+            linkedFiles.push({
+              file: linkedFile,
+              linkType: 'link',
+              isShared,
+            });
+
+            // Recursively process markdown files for nested links
+            await processFile(linkedFile, depth + 1);
+          }
+        }
+      }
+
+      // Process embeds ![[...]] - only markdown documents
+      if (cache.embeds) {
+        for (const embed of cache.embeds) {
+          const embeddedFile = this.app.metadataCache.getFirstLinkpathDest(
+            embed.link,
+            currentFile.path
+          );
+
+          if (
+            embeddedFile &&
+            embeddedFile.extension === 'md' &&
+            !processedPaths.has(embeddedFile.path)
+          ) {
+            const isShared = !!this.mappingManager.findMappingByPath(
+              embeddedFile.path
+            );
+            linkedFiles.push({
+              file: embeddedFile,
+              linkType: 'embed',
+              isShared,
+            });
+
+            // Recursively process markdown files for nested links
+            await processFile(embeddedFile, depth + 1);
+          }
+        }
+      }
+    };
+
+    await processFile(file);
+
+    // Remove duplicates and return only files that exist and aren't already shared
+    const uniqueFiles = new Map<string, LinkedFile>();
+    linkedFiles.forEach(item => {
+      if (!uniqueFiles.has(item.file.path)) {
+        uniqueFiles.set(item.file.path, item);
+      }
+    });
+
+    return Array.from(uniqueFiles.values());
   }
 
   async unshareNote(file: TFile): Promise<void> {
